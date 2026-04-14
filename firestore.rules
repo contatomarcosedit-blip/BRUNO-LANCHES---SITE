@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == "marcosfotos81026@gmail.com" ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    function isValidMenuItem(data) {
+      return data.keys().hasAll(['name', 'price', 'category']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.price is number && data.price >= 0 &&
+             data.category is string && data.category.size() > 0 && data.category.size() < 50 &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 500)) &&
+             (!('promotionalPrice' in data) || (data.promotionalPrice is number && data.promotionalPrice >= 0)) &&
+             (!('image' in data) || (data.image is string && data.image.size() <= 1000)) &&
+             (!('priceOptions' in data) || (data.priceOptions is string && data.priceOptions.size() <= 200));
+    }
+
+    match /menuItems/{itemId} {
+      allow read: if true; // Publicly readable
+      allow create: if isAdmin() && isValidMenuItem(request.resource.data);
+      allow update: if isAdmin() && isValidMenuItem(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isAdmin() || (isAuthenticated() && request.auth.uid == userId);
+      allow create: if isAdmin() && request.resource.data.keys().hasAll(['role', 'email']) && request.resource.data.role in ['admin', 'user'];
+      allow update: if isAdmin() && request.resource.data.keys().hasAll(['role', 'email']) && request.resource.data.role in ['admin', 'user'];
+      allow delete: if isAdmin();
+    }
+  }
+}
